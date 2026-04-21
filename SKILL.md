@@ -1,6 +1,6 @@
 ---
 name: openrouter-sonar
-description: Local OpenRouter Sonar web search CLI using the user's OpenRouter API key. Use when you want OpenRouter-backed web search or cited research from a local command like `sonar "query" --model sonar-pro`, plus utilities like `sonar models`, `sonar research`, and `sonar extract`.
+description: Local OpenRouter Sonar web search CLI using the user's OpenRouter API key. Use when you want OpenRouter-backed web search or cited research from a local command like `sonar "query" --model sonar-pro`, plus utilities like `sonar models`, `sonar research`, and file output options.
 ---
 
 # OpenRouter Sonar
@@ -15,6 +15,8 @@ This skill provides a local `sonar` CLI backed by OpenRouter Sonar models with w
 sonar "latest OpenRouter Sonar features"
 sonar "best document AI underwriting startups" --model sonar-pro
 sonar "credit underwriting agents" --model sonar-reasoning-pro
+sonar "latest underwriting automation startups" --format md --output notes.md
+sonar "OpenRouter Sonar pricing" --format json --output sonar.json
 ```
 
 Default model:
@@ -59,17 +61,23 @@ sonar reason-pro "compare three underwriting architectures and justify the best 
 
 ```bash
 sonar research "Compare Tavily, Exa, and Sonar for cited research workflows"
+sonar research "Latest UK AI policy changes" --format md --output policy.md
 ```
 
 Default model for `research`:
 
 - `sonar-deep-research`
 
-### Extract
+## Output
 
-```bash
-sonar extract "https://openrouter.ai/docs/api/reference/overview"
-```
+Use `--output` to write to a file and `--format` to choose the file type.
+
+Supported formats:
+
+- `text`
+- `txt`
+- `md`
+- `json`
 
 ## Environment
 

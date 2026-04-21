@@ -10,6 +10,7 @@ type SearchResponse = {
   model?: string;
   answer?: string;
   citations?: string[];
+  search_results?: any[];
   raw?: any;
 };
 
@@ -118,6 +119,7 @@ function parseSearchResponse(json: any): SearchResponse {
     model: shortModelName(String(json?.model || '')),
     answer: cleanText(message?.content ?? ''),
     citations: Array.isArray(citations) ? citations.map(String) : [],
+    search_results: Array.isArray(json?.search_results) ? json.search_results : [],
     raw: json,
   };
 }
@@ -131,14 +133,46 @@ function renderText(resp: SearchResponse) {
   }
 }
 
-async function runQuery(query: string, model: string, output: string, system?: string) {
+async function writeOutput(parsed: SearchResponse, outputFormat: string, outputFile?: string) {
+  let content = '';
+
+  if (outputFormat === 'json') {
+    content = JSON.stringify(parsed, null, 2);
+  } else if (outputFormat === 'txt') {
+    const parts: string[] = [];
+    if (parsed.model) parts.push(`[${parsed.model}]`);
+    if (parsed.answer) parts.push(parsed.answer.trim());
+    if (parsed.citations?.length) parts.push('Sources:\n' + parsed.citations.map((c, i) => `${i + 1}. ${c}`).join('\n'));
+    content = parts.join('\n\n');
+  } else {
+    const parts: string[] = [];
+    if (parsed.model) parts.push(`# ${parsed.model}`);
+    if (parsed.answer) parts.push(parsed.answer.trim());
+    if (parsed.citations?.length) parts.push('## Sources\n' + parsed.citations.map((c, i) => `${i + 1}. ${c}`).join('\n'));
+    content = parts.join('\n\n');
+  }
+
+  if (outputFile) {
+    await Bun.write(outputFile, content + (content.endsWith('\n') ? '' : '\n'));
+    console.log(`Wrote ${outputFormat} output to ${outputFile}`);
+    return;
+  }
+
+  console.log(content);
+}
+
+async function runQuery(query: string, model: string, output: string, system?: string, outputFile?: string, fileType?: string) {
   const messages: ChatMessage[] = [];
   if (system) messages.push({ role: 'system', content: system });
   messages.push({ role: 'user', content: query });
   const raw = await callOpenRouter(messages, model);
   const parsed = parseSearchResponse(raw);
-  if (output === 'json') console.log(JSON.stringify(parsed, null, 2));
-  else renderText(parsed);
+  const finalFormat = fileType || output;
+  if (!outputFile && output === 'text' && !fileType) {
+    renderText(parsed);
+    return;
+  }
+  await writeOutput(parsed, finalFormat, outputFile);
 }
 
 const program = new Command();
@@ -147,7 +181,8 @@ program
   .description('OpenRouter Sonar CLI with web search enabled.')
   .argument('[query...]', 'query to search')
   .option('-m, --model <model>', 'Sonar model', DEFAULT_MODEL)
-  .option('-o, --output <format>', 'text|json', 'text')
+  .option('-o, --output <path>', 'write output to a file path')
+  .option('-f, --format <format>', 'text|json|md|txt', 'text')
   .option('-s, --system <prompt>', 'optional system prompt')
   .action(async (queryParts, opts) => {
     const query = Array.isArray(queryParts) ? queryParts.join(' ').trim() : '';
@@ -155,7 +190,7 @@ program
       program.outputHelp();
       return;
     }
-    await runQuery(query, opts.model, opts.output, opts.system);
+    await runQuery(query, opts.model, opts.format, opts.system, opts.output, opts.format);
   });
 
 program
@@ -180,11 +215,12 @@ for (const [name, model, system] of [
     .command(name)
     .description(`Run a query with ${model}.`)
     .argument('<query...>', 'query to search')
-    .option('-o, --output <format>', 'text|json', 'text')
+    .option('-o, --output <path>', 'write output to a file path')
+    .option('-f, --format <format>', 'text|json|md|txt', 'text')
     .option('-s, --system <prompt>', 'optional system prompt')
     .action(async (queryParts, opts) => {
       const query = Array.isArray(queryParts) ? queryParts.join(' ').trim() : '';
-      await runQuery(query, model, opts.output, opts.system || system);
+      await runQuery(query, model, opts.format, opts.system || system, opts.output, opts.format);
     });
 }
 
@@ -193,27 +229,20 @@ program
   .description('Run a broader research prompt.')
   .argument('<input...>', 'research prompt')
   .option('-m, --model <model>', 'Sonar model', 'sonar-deep-research')
-  .option('-o, --output <format>', 'text|json', 'text')
+  .option('-o, --output <path>', 'write output to a file path')
+  .option('-f, --format <format>', 'text|json|md|txt', 'text')
   .action(async (inputParts, opts) => {
     const input = Array.isArray(inputParts) ? inputParts.join(' ').trim() : '';
     await runQuery(
       input,
       opts.model,
+      opts.format,
+      'You are a research assistant. Search the web, synthesize findings clearly, and cite sources.',
       opts.output,
-      'You are a research assistant. Search the web, synthesize findings clearly, and cite sources.'
+      opts.format
     );
   });
 
-program
-  .command('extract')
-  .description('Extract and summarize a URL.')
-  .argument('<url>', 'URL to extract')
-  .option('-p, --prompt <prompt>', 'extraction prompt', 'Extract the main content of this page and summarize the key points.')
-  .option('-m, --model <model>', 'Sonar model', DEFAULT_MODEL)
-  .option('-o, --output <format>', 'text|json', 'text')
-  .action(async (url, opts) => {
-    await runQuery(`${opts.prompt}\n\nURL: ${url}`, opts.model, opts.output);
-  });
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
